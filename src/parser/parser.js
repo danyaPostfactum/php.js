@@ -147,8 +147,11 @@ PHP.Parser = function ( preprocessedTokens, eval ) {
                 return this.yyval;
             } else if (yyn !== this.YYUNEXPECTED ) {
                 /* reduce */
+                for (var attr in this.endAttributes) {
+                    attributeStack[ this.stackPos - yylen[ yyn ] ][ attr ] = this.endAttributes[ attr ];
+                }
                 try {
-                    this['yyn' + yyn](PHP.Utils.Merge(attributeStack[this.stackPos - yylen[ yyn ] ], this.endAttributes));
+                    this['yyn' + yyn](attributeStack[ this.stackPos - yylen[ yyn ] ]);
                 } catch (e) {
                     /*
                         if (-1 === $e->getRawLine()) {
@@ -244,14 +247,8 @@ PHP.Parser.prototype.getNextToken = function( ) {
             this.startAttributes['startLine'] = this.line;
             this.endAttributes['endLine'] = this.line;
 
-            // bug in token_get_all
-            if ('b"' === token) {
-                this.tokenValue = 'b"';
-                return '"'.charCodeAt(0);
-            } else {
-                this.tokenValue = token;
-                return token.charCodeAt(0);
-            }
+            this.tokenValue = token;
+            return token.charCodeAt(0);
         } else {
 
 
@@ -288,6 +285,20 @@ PHP.Parser.prototype.getNextToken = function( ) {
     return 0;
 };
 
+PHP.Parser.prototype.tokenName = function( token ) {
+    var constants = ["T_INCLUDE","T_INCLUDE_ONCE","T_EVAL","T_REQUIRE","T_REQUIRE_ONCE","T_LOGICAL_OR","T_LOGICAL_XOR","T_LOGICAL_AND","T_PRINT","T_PLUS_EQUAL","T_MINUS_EQUAL","T_MUL_EQUAL","T_DIV_EQUAL","T_CONCAT_EQUAL","T_MOD_EQUAL","T_AND_EQUAL","T_OR_EQUAL","T_XOR_EQUAL","T_SL_EQUAL","T_SR_EQUAL","T_BOOLEAN_OR","T_BOOLEAN_AND","T_IS_EQUAL","T_IS_NOT_EQUAL","T_IS_IDENTICAL","T_IS_NOT_IDENTICAL","T_IS_SMALLER_OR_EQUAL","T_IS_GREATER_OR_EQUAL","T_SL","T_SR","T_INSTANCEOF","T_INC","T_DEC","T_INT_CAST","T_DOUBLE_CAST","T_STRING_CAST","T_ARRAY_CAST","T_OBJECT_CAST","T_BOOL_CAST","T_UNSET_CAST","T_NEW","T_CLONE","T_EXIT","T_IF","T_ELSEIF","T_ELSE","T_ENDIF","T_LNUMBER","T_DNUMBER","T_STRING","T_STRING_VARNAME","T_VARIABLE","T_NUM_STRING","T_INLINE_HTML","T_CHARACTER","T_BAD_CHARACTER","T_ENCAPSED_AND_WHITESPACE","T_CONSTANT_ENCAPSED_STRING","T_ECHO","T_DO","T_WHILE","T_ENDWHILE","T_FOR","T_ENDFOR","T_FOREACH","T_ENDFOREACH","T_DECLARE","T_ENDDECLARE","T_AS","T_SWITCH","T_ENDSWITCH","T_CASE","T_DEFAULT","T_BREAK","T_CONTINUE","T_GOTO","T_FUNCTION","T_CONST","T_RETURN","T_TRY","T_CATCH","T_THROW","T_USE","T_INSTEADOF","T_GLOBAL","T_STATIC","T_ABSTRACT","T_FINAL","T_PRIVATE","T_PROTECTED","T_PUBLIC","T_VAR","T_UNSET","T_ISSET","T_EMPTY","T_HALT_COMPILER","T_CLASS","T_TRAIT","T_INTERFACE","T_EXTENDS","T_IMPLEMENTS","T_OBJECT_OPERATOR","T_DOUBLE_ARROW","T_LIST","T_ARRAY","T_CALLABLE","T_CLASS_C","T_TRAIT_C","T_METHOD_C","T_FUNC_C","T_LINE","T_FILE","T_COMMENT","T_DOC_COMMENT","T_OPEN_TAG","T_OPEN_TAG_WITH_ECHO","T_CLOSE_TAG","T_WHITESPACE","T_START_HEREDOC","T_END_HEREDOC","T_DOLLAR_OPEN_CURLY_BRACES","T_CURLY_OPEN","T_PAAMAYIM_NEKUDOTAYIM","T_DOUBLE_COLON","T_NAMESPACE","T_NS_C","T_DIR","T_NS_SEPARATOR"];
+    var current = "UNKNOWN";
+    constants.some(function( constant ) {
+        if (PHP.Constants[ constant ] === token) {
+            current = constant;
+            return true;
+        } else {
+            return false;
+        }
+    });
+
+    return current;
+};
 
 /**
  * Creates the token map.
@@ -317,76 +328,10 @@ PHP.Parser.prototype.createTokenMap = function() {
         } else if( PHP.Constants.T_CLOSE_TAG === i ) {
             tokenMap[ i ] = 59;
         // and the others can be mapped directly
-        } else if ( 'UNKNOWN' !== (name = PHP.Utils.TokenName( i ) ) ) {
+        } else if ( 'UNKNOWN' !== (name = this.tokenName( i ) ) ) {
+
             tokenMap[ i ] =  this[name];
         }
     }
     return tokenMap;
-};
-
-var yynStandard = function () {
-    this.yyval =  this.yyastk[ this.stackPos-(1-1) ];
-};
-// todo fix
-
-PHP.Parser.prototype.MakeArray = function( arr ) {
-    return Array.isArray( arr ) ? arr : [ arr ];
-}
-
-
-PHP.Parser.prototype.parseString = function( str ) {
-    var bLength = 0;
-    if ('b' === str[0]) {
-        bLength = 1;
-    }
-
-    if ('\'' === str[ bLength ]) {
-        str = str.replace(
-            ['\\\\', '\\\''],
-            [  '\\',   '\'']);
-    } else {
-
-        str = this.parseEscapeSequences( str, '"');
-
-    }
-
-    return str;
-
-};
-
-PHP.Parser.prototype.parseEscapeSequences = function( str, quote ) {
-
-
-
-    if (undefined !== quote) {
-        str = str.replace(new RegExp('\\' + quote, "g"), quote);
-    }
-
-    var replacements = {
-        '\\': '\\',
-        '$':  '$',
-        'n': "\n",
-        'r': "\r",
-        't': "\t",
-        'f': "\f",
-        'v': "\v",
-        'e': "\x1B"
-    };
-
-    return str.replace(
-        /~\\\\([\\\\$nrtfve]|[xX][0-9a-fA-F]{1,2}|[0-7]{1,3})~/g,
-        function ( matches ){
-            var str = matches[1];
-
-            if ( replacements[ str ] !== undefined ) {
-                return replacements[ str ];
-            } else if ('x' === str[ 0 ] || 'X' === str[ 0 ]) {
-                return chr(hexdec(str));
-            } else {
-                return chr(octdec(str));
-            }
-        }
-        );
-
-    return str;
 };
